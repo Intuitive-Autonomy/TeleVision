@@ -19,7 +19,7 @@ import yaml
 from multiprocessing import Array, Process, shared_memory, Queue, Manager, Event, Semaphore
 
 class VuerTeleop:
-    def __init__(self, config_file_path):
+    def __init__(self, config_file_path, record_data_path="", record_playback_realtime=0):
         self.resolution = (720, 1280)
         self.crop_size_w = 0
         self.crop_size_h = 0
@@ -32,8 +32,12 @@ class VuerTeleop:
         self.img_array = np.ndarray((self.img_shape[0], self.img_shape[1], 3), dtype=np.uint8, buffer=self.shm.buf)
         image_queue = Queue()
         toggle_streaming = Event()
-        self.tv = OpenTeleVision(self.resolution_cropped, self.shm.name, image_queue, toggle_streaming)
+        self.record_playback_realtime = record_playback_realtime
+        #self.tv = OpenTeleVision(self.resolution_cropped, self.shm.name, image_queue, toggle_streaming)
+        self.tv = OpenTeleVision(self.resolution_cropped, self.shm.name, image_queue, toggle_streaming, ngrok=True, record_data_path=record_data_path, record_playback_realtime=record_playback_realtime)
+
         self.processor = VuerPreprocessor()
+        self.step_index = 0
 
         RetargetingConfig.set_default_urdf_dir('../assets')
         with Path(config_file_path).open('r') as f:
@@ -44,6 +48,8 @@ class VuerTeleop:
         self.right_retargeting = right_retargeting_config.build()
 
     def step(self):
+        if self.record_playback_realtime == 2:
+            self.tv.step_record_data()
         head_mat, left_wrist_mat, right_wrist_mat, left_hand_mat, right_hand_mat = self.processor.process(self.tv)
 
         head_rmat = head_mat[:3, :3]
@@ -54,7 +60,14 @@ class VuerTeleop:
                                      rotations.quaternion_from_matrix(right_wrist_mat[:3, :3])[[1, 2, 3, 0]]])
         left_qpos = self.left_retargeting.retarget(left_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
         right_qpos = self.right_retargeting.retarget(right_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        if self.step_index % 100 == 0:
+            print("step_index:", self.step_index)
 
+        if self.record_playback_realtime == 1 and self.step_index == 2000:
+            self.tv.save_record_data()
+            print("Recording data")
+
+        self.step_index += 1
         return head_rmat, left_pose, right_pose, left_qpos, right_qpos
 
 class Sim:
@@ -252,13 +265,15 @@ class Sim:
 
 
 if __name__ == '__main__':
-    teleoperator = VuerTeleop('inspire_hand.yml')
+    teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=2)
     simulator = Sim()
-
     try:
         while True:
             head_rmat, left_pose, right_pose, left_qpos, right_qpos = teleoperator.step()
+            #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
+            #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
             left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
+
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
     except KeyboardInterrupt:
         simulator.end()

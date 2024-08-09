@@ -5,19 +5,40 @@ from vuer.schemas import ImageBackground, group, Hands, WebRTCStereoVideoPlane, 
 from multiprocessing import Array, Process, shared_memory, Queue, Manager, Event, Semaphore
 import numpy as np
 import asyncio
+import pickle
 from webrtc.zed_server import *
 
 class OpenTeleVision:
-    def __init__(self, img_shape, shm_name, queue, toggle_streaming, stream_mode="image", cert_file="./cert.pem", key_file="./key.pem", ngrok=False):
+    # record_playback_realtime = 0 means realtime playback, 1 means record data, 2 playback data
+    def __init__(self, img_shape, shm_name, queue, toggle_streaming, stream_mode="image", cert_file="./cert.pem", key_file="./key.pem", ngrok=False, record_data_path="", record_playback_realtime=0):
         # self.app=Vuer()
         self.img_shape = (img_shape[0], 2*img_shape[1], 3)
         self.img_height, self.img_width = img_shape[:2]
 
         if ngrok:
             self.app = Vuer(host='0.0.0.0', queries=dict(grid=False), queue_len=3)
+            print("============================= No cert files")
         else:
             self.app = Vuer(host='0.0.0.0', cert=cert_file, key=key_file, queries=dict(grid=False), queue_len=3)
-
+            print("============================= Has cert files")
+        
+        self.record_playback_realtime = record_playback_realtime
+        self.record_data_index = -1
+        self.record_data_path = record_data_path
+        if record_playback_realtime == 1:
+            self.record_data_dict = {}
+            self.record_data_dict['left_hand'] = []
+            self.record_data_dict['right_hand'] = []
+            self.record_data_dict['left_landmarks'] = []
+            self.record_data_dict['right_landmarks'] = []
+            self.record_data_dict['head_matrix'] = []
+            self.record_data_dict['aspect'] = []
+        elif record_playback_realtime == 2:
+            with open(record_data_path, 'rb') as pkl_file:
+                self.record_data_dict = pickle.load(pkl_file)
+        elif record_playback_realtime != 0:
+            raise ValueError("record_playback_realtime must be 0, 1 or 2")
+        
         self.app.add_handler("HAND_MOVE")(self.on_hand_move)
         self.app.add_handler("CAMERA_MOVE")(self.on_cam_move)
         if stream_mode == "image":
@@ -73,7 +94,14 @@ class OpenTeleVision:
         self.process.daemon = True
         self.process.start()
 
+    def step_record_data(self):
+        self.record_data_index += 1
     
+    def save_record_data(self):
+        if self.record_playback_realtime == 1:
+            with open(self.record_data_path, 'wb') as pkl_file:
+                pickle.dump(self.record_data_dict, pkl_file)
+
     def run(self):
         self.app.run()
 
@@ -199,40 +227,90 @@ class OpenTeleVision:
     def left_hand(self):
         # with self.left_hand_shared.get_lock():
         #     return np.array(self.left_hand_shared[:]).reshape(4, 4, order="F")
-        return np.array(self.left_hand_shared[:]).reshape(4, 4, order="F")
+        r = np.array(self.left_hand_shared[:]).reshape(4, 4, order="F")
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['left_hand'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['left_hand'][self.record_data_index]
+            return r
         
     
     @property
     def right_hand(self):
         # with self.right_hand_shared.get_lock():
         #     return np.array(self.right_hand_shared[:]).reshape(4, 4, order="F")
-        return np.array(self.right_hand_shared[:]).reshape(4, 4, order="F")
-        
+        r = np.array(self.right_hand_shared[:]).reshape(4, 4, order="F")
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['right_hand'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['right_hand'][self.record_data_index]
+            return r
     
     @property
     def left_landmarks(self):
         # with self.left_landmarks_shared.get_lock():
         #     return np.array(self.left_landmarks_shared[:]).reshape(25, 3)
-        return np.array(self.left_landmarks_shared[:]).reshape(25, 3)
+        r = np.array(self.left_landmarks_shared[:]).reshape(25, 3)
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['left_landmarks'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['left_landmarks'][self.record_data_index]
+            return r
+        
     
     @property
     def right_landmarks(self):
         # with self.right_landmarks_shared.get_lock():
             # return np.array(self.right_landmarks_shared[:]).reshape(25, 3)
-        return np.array(self.right_landmarks_shared[:]).reshape(25, 3)
+        r = np.array(self.right_landmarks_shared[:]).reshape(25, 3)
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['right_landmarks'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['right_landmarks'][self.record_data_index]
+            return r
+        
 
     @property
     def head_matrix(self):
         # with self.head_matrix_shared.get_lock():
         #     return np.array(self.head_matrix_shared[:]).reshape(4, 4, order="F")
-        return np.array(self.head_matrix_shared[:]).reshape(4, 4, order="F")
+        r = np.array(self.head_matrix_shared[:]).reshape(4, 4, order="F")
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['head_matrix'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['head_matrix'][self.record_data_index]
+            return r
+        
 
     @property
     def aspect(self):
         # with self.aspect_shared.get_lock():
             # return float(self.aspect_shared.value)
-        return float(self.aspect_shared.value)
-
+        r = float(self.aspect_shared.value)
+        if self.record_playback_realtime == 0:
+            return r
+        elif self.record_playback_realtime == 1:
+            self.record_data_dict['aspect'].append(r)
+            return r
+        elif self.record_playback_realtime == 2:
+            r = self.record_data_dict['aspect'][self.record_data_index]
+            return r
+        
     
 if __name__ == "__main__":
     resolution = (720, 1280)
@@ -245,7 +323,9 @@ if __name__ == "__main__":
     shm_name = shm.name
     img_array = np.ndarray((img_shape[0], img_shape[1], 3), dtype=np.uint8, buffer=shm.buf)
 
-    tv = OpenTeleVision(resolution_cropped, cert_file="../cert.pem", key_file="../key.pem")
+    #tv = OpenTeleVision(resolution_cropped, cert_file="../cert.pem", key_file="../key.pem")
+    tv = OpenTeleVision(self.resolution_cropped, shm.name, image_queue, toggle_streaming, ngrok=True)
+
     while True:
         # print(tv.left_landmarks)
         # print(tv.left_hand)

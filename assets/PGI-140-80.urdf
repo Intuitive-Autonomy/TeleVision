@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="PGI-140-80">
+  <link
+    name="base_link">
+    <!-- <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.1" />
+      <inertia
+        ixx="0.1"
+        ixy="0.1"
+        ixz="0.1"
+        iyy="0.1"
+        iyz="0.1"
+        izz="0.1" />
+    </inertial> -->
+    <visual>
+      <origin
+        xyz="-0.0475 -0.0326 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.75294 0.75294 0.75294 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="finger1_link">
+    <!-- <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.1" />
+      <inertia
+        ixx="0.1"
+        ixy="0.1"
+        ixz="0.1"
+        iyy="0.1"
+        iyz="0.1"
+        izz="0.1" />
+    </inertial> -->
+    <visual>
+      <origin
+        xyz="-0.0485 -0.035 -0.0758"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/finger1_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/finger1_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="finger1_joint"
+    type="prismatic">
+    <origin
+      xyz="0.041 0.01815 0.08"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="finger1_link" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="0"
+      upper="0.040"
+      effort="140"
+      velocity="1" />
+  </joint>
+  <link
+    name="finger2_link">
+    <!-- <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+      <inertia
+        ixx="0"
+        ixy="0"
+        ixz="0"
+        iyy="0"
+        iyz="0"
+        izz="0" />
+    </inertial> -->
+    <visual>
+      <origin
+        xyz="-0.019 -0.012 -0.0758"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/finger2_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://PGI-140-80/meshes/finger2_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="finger2_joint"
+    type="prismatic">
+    <origin
+      xyz="-0.041 -0.01815 0.08"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="finger2_link" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="-0.040"
+      upper="0"
+      effort="140"
+      velocity="1" />
+    <mimic
+      joint="finger1_joint"
+      multiplier="1"
+      offset="0" />
+  </joint>
+</robot>

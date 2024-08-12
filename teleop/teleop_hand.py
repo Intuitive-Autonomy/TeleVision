@@ -18,6 +18,7 @@ import time
 import yaml
 from multiprocessing import Array, Process, shared_memory, Queue, Manager, Event, Semaphore
 
+
 class VuerTeleop:
     def __init__(self, config_file_path, record_data_path="", record_playback_realtime=0):
         self.resolution = (720, 1280)
@@ -34,6 +35,8 @@ class VuerTeleop:
         toggle_streaming = Event()
         self.record_playback_realtime = record_playback_realtime
         #self.tv = OpenTeleVision(self.resolution_cropped, self.shm.name, image_queue, toggle_streaming)
+
+        # tv handles the visual and pose I/O of control device
         self.tv = OpenTeleVision(self.resolution_cropped, self.shm.name, image_queue, toggle_streaming, ngrok=True, record_data_path=record_data_path, record_playback_realtime=record_playback_realtime)
 
         self.processor = VuerPreprocessor()
@@ -50,16 +53,22 @@ class VuerTeleop:
     def step(self):
         if self.record_playback_realtime == 2:
             self.tv.step_record_data()
+        
+        # get body poses from teleop control device
+        # left_hand_mat and right_hand_mat are finger positions in the left_wrist and right_wrist coorindate
         head_mat, left_wrist_mat, right_wrist_mat, left_hand_mat, right_hand_mat = self.processor.process(self.tv)
 
+        # head rotation matrix
         head_rmat = head_mat[:3, :3]
 
+        # [-0.6, 0, 1.6] are for gym demo settings, may be related to the table position, x forward, z up
         left_pose = np.concatenate([left_wrist_mat[:3, 3] + np.array([-0.6, 0, 1.6]),
                                     rotations.quaternion_from_matrix(left_wrist_mat[:3, :3])[[1, 2, 3, 0]]])
         right_pose = np.concatenate([right_wrist_mat[:3, 3] + np.array([-0.6, 0, 1.6]),
                                      rotations.quaternion_from_matrix(right_wrist_mat[:3, :3])[[1, 2, 3, 0]]])
         left_qpos = self.left_retargeting.retarget(left_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
         right_qpos = self.right_retargeting.retarget(right_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+
         if self.step_index % 100 == 0:
             print("step_index:", self.step_index)
 
@@ -267,11 +276,17 @@ class Sim:
 if __name__ == '__main__':
     teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=2)
     simulator = Sim()
+    # pose_list = []
     try:
         while True:
             head_rmat, left_pose, right_pose, left_qpos, right_qpos = teleoperator.step()
-            #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
-            #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
+            # pose_list.append((head_rmat, left_pose, right_pose))
+            # if len(pose_list) == 2000:
+            #     import pickle
+            #     with open("pose.pkl", "wb") as file:
+            #         pickle.dump(pose_list, file)
+            # print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
+            # print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
             left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
 
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))

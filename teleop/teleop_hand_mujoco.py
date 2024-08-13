@@ -77,7 +77,7 @@ class VuerTeleop:
 
 class Sim:
     def __init__(self, print_freq=False):
-                # get the full path
+        # get the full path
         xml_path = '../assets/robot_assemble.xml'
 
         dirname = os.path.dirname(__file__)
@@ -174,7 +174,7 @@ class Sim:
         if (not button_left) and (not button_middle) and (not button_right):
             return
 
-        # get current window size
+        # get current window sizarmse
         width, height = glfw.get_window_size(window)
 
         # get shift key state
@@ -261,27 +261,6 @@ class Sim:
         T_gripper2base = T_head2base @ T_hand2head @ T_gripper2hand
         
         return T_gripper2base
-
-    def trans_gripper_base(self, T_hand2head, arm='left', vr_height=1.0):
-        # using robot coordinate defined in xml/urdf
-        # head and hand are in oculus coordinate
-        # base and gripper are in robot coordinate
-        R_head2base = R.from_euler("X", np.array([np.pi]))
-        T_head2base = np.identity(4)
-        T_head2base[:3, :3] = R_head2base.as_matrix()
-        T_head2base[2, -1] = vr_height # from vr headset to ground
-
-        if arm == 'left':
-            R_gripper2hand = R.from_euler("XZ", np.array([np.pi/2, np.pi]))
-        else:
-            R_gripper2hand = R.from_euler("X", np.array([np.pi/2]))
-        
-        T_gripper2hand = np.identity(4)
-        T_gripper2hand[:3, :3] = R_gripper2hand.as_matrix()
-
-        T_gripper2base = T_head2base @ T_hand2head @ T_gripper2hand
-        
-        return T_gripper2base
     
     def oculus_pose2mujoco(self, action, shape_factor=1.0):
         mujoco_action = {}
@@ -298,11 +277,13 @@ class Sim:
     def oculus_delta_pose2mujoco(self, action, prev_action, cur_pose_dict, cur_quat_dict):
         mujoco_action = {}
         for arm in ['left', 'right']:
-            T_gripper2base = self.trans_gripper_base(self.vec2mat(action[arm]))
+            # T_gripper2base = self.trans_gripper_base(self.vec2mat(action[arm]))
+            T_gripper2base = self.vec2mat(action[arm])
             cur_xpos = T_gripper2base[:3, -1]
             cur_rot_mat = T_gripper2base[:3, :3]
-            
-            T_gripper2base = self.trans_gripper_base(self.vec2mat(prev_action[arm]))
+
+            # T_gripper2base = self.trans_gripper_base(self.vec2mat(prev_action[arm]))
+            T_gripper2base = self.vec2mat(prev_action[arm])
             prev_xpos = T_gripper2base[:3, -1]
             prev_rot_mat = T_gripper2base[:3, :3]
 
@@ -323,6 +304,20 @@ class Sim:
         T[:3, :3] = R.from_quat(vec[3:]).as_matrix()
         T[:3, -1] = vec[:3]
         return T
+
+    def prepare_action(self, action, left_pose, right_pose):
+        T_xfront2yfront = np.identity(4)
+        R_xfront2yfront = R.from_euler("Z", np.array([np.pi/2]))
+        T_xfront2yfront[:3, :3] = R_xfront2yfront.as_matrix()
+        T_left_pose = self.vec2mat(left_pose)
+        T_right_pose = self.vec2mat(right_pose)
+        T_left_pose = T_xfront2yfront @ T_left_pose
+        T_right_pose = T_xfront2yfront @ T_right_pose
+        action['left'] = \
+            np.concatenate((T_left_pose[:3, -1], R.from_matrix(T_left_pose[:3, :3]).as_quat()))
+        action['right'] = \
+            np.concatenate((T_right_pose[:3, -1], R.from_matrix(T_right_pose[:3, :3]).as_quat()))
+        return action
     
     def check_valid_action(self, action, current_pose, current_quat):
         # TODO: add more safty checks
@@ -377,7 +372,7 @@ class Sim:
         if self.action_iter == len(self.action_list):
             print("End of action list")
             raise Exception("End of action list")
-            
+
         action = self.action_list[self.action_iter]
         self.action_iter += 1
 
@@ -387,7 +382,8 @@ class Sim:
         
 
         # action = oculus_pose2mujoco(action)
-        self.prev_action, action, press_flag = self.process_action(self.prev_action, action, self.press_flag)
+        action = self.prepare_action(action, left_pose, right_pose)
+        self.prev_action, action, self.press_flag = self.process_action(self.prev_action, action, self.press_flag)
         mujoco_action = self.oculus_delta_pose2mujoco(action, self.prev_action, current_pose_dict, current_quat_dict)
         mujoco_action = self.check_valid_action(mujoco_action, current_pose_dict, current_quat_dict)
         self.prev_action = action
@@ -421,12 +417,12 @@ class Sim:
         glfw.poll_events()
 
         viewport_width, viewport_height = glfw.get_framebuffer_size(self.window)
-        rgb_image = np.zeros((viewport_height,viewport_width, 3), dtype=np.uint8)
+        rgb_image = np.zeros((viewport_height, viewport_width, 3), dtype=np.uint8)
         mj.mjr_readPixels(rgb_image, None, viewport, self.context)
         rgb_image = np.flipud(rgb_image)
-        cv2.namedWindow('Mujoco', cv2.WINDOW_AUTOSIZE)
-        cv2.imshow('Mujoco', rgb_image)
-        cv2.waitKey(1)
+        # cv2.namedWindow('Mujoco', cv2.WINDOW_AUTOSIZE)
+        # cv2.imshow('Mujoco', rgb_image)
+        # cv2.waitKey(1)
         return rgb_image, rgb_image
 
     def get_resolution(self):
@@ -446,9 +442,9 @@ if __name__ == '__main__':
         head_rmat, left_pose, right_pose, left_qpos, right_qpos = teleoperator.step()
         #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
         #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
+        print("get vr pose: ", left_pose, right_pose)
         try:
             left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
-
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
         except Exception as e:
             simulator.end()

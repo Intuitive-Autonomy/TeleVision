@@ -55,16 +55,28 @@ class VuerTeleop:
     def step(self):
         if self.record_playback_realtime == 2:
             self.tv.step_record_data()
+        
+        # get body poses from teleop control device
+        # left_hand_mat and right_hand_mat are finger positions in the left_wrist and right_wrist coorindate
         head_mat, left_wrist_mat, right_wrist_mat, left_hand_mat, right_hand_mat = self.processor.process(self.tv)
 
+        # head rotation matrix
         head_rmat = head_mat[:3, :3]
-
-        left_pose = np.concatenate([left_wrist_mat[:3, 3] + np.array([-0.6, 0, 1.6]),
+        
+        # [-0.6, 0, 1.6] are for gym demo settings, may be related to the table position, x forward, z up
+        pos_offset = np.array([-0.6, 0, 1.6])
+        left_pose = np.concatenate([left_wrist_mat[:3, 3] + pos_offset,
                                     rotations.quaternion_from_matrix(left_wrist_mat[:3, :3])[[1, 2, 3, 0]]])
-        right_pose = np.concatenate([right_wrist_mat[:3, 3] + np.array([-0.6, 0, 1.6]),
+        right_pose = np.concatenate([right_wrist_mat[:3, 3] + pos_offset,
                                      rotations.quaternion_from_matrix(right_wrist_mat[:3, :3])[[1, 2, 3, 0]]])
-        left_qpos = self.left_retargeting.retarget(left_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-        right_qpos = self.right_retargeting.retarget(right_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        # finger pose and ik
+        left_finger_pos = left_hand_mat[tip_indices]
+        right_finger_pos = right_hand_mat[tip_indices]
+        left_qpos = self.left_retargeting.retarget(left_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        right_qpos = self.right_retargeting.retarget(right_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        left_gripper_dist = np.linalg.norm(left_finger_pos[0] - left_finger_pos[1])
+        right_gripper_dist = np.linalg.norm(right_finger_pos[0] - right_finger_pos[1])
+        
         if self.step_index % 100 == 0:
             print("step_index:", self.step_index)
 
@@ -73,7 +85,7 @@ class VuerTeleop:
             print("Recording data")
 
         self.step_index += 1
-        return head_rmat, left_pose, right_pose, left_qpos, right_qpos
+        return head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist
 
 class Sim:
     def __init__(self, print_freq=False):
@@ -125,6 +137,13 @@ class Sim:
             {"left": ["L_finger1_joint", "L_finger2_joint"],
             "right": ["R_finger1_joint", "R_finger2_joint"]}
         self.press_flag = {'left': False, 'right': False}
+        self.gripper_limit = {}
+        for arm in self.arms:
+            joint_name = self.gripper_joint_names[arm][0] # assume all gripper joints have the same limit
+            joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
+            joint_limits = self.model.jnt_range[joint_id]
+            self.gripper_limit[arm] = joint_limits[1] - joint_limits[0]
+        
         import pickle
         with open('action.pkl', 'rb') as file:
             self.action_list = pickle.load(file)
@@ -273,7 +292,7 @@ class Sim:
                 np.concatenate((T_gripper2base[:3, -1] * shape_factor, 
                                 R.from_matrix(T_gripper2base[:3, :3]).as_quat()))
         return mujoco_action
-    
+
     def oculus_delta_pose2mujoco(self, action, prev_action, cur_pose_dict, cur_quat_dict):
         mujoco_action = {}
         for arm in ['left', 'right']:
@@ -305,7 +324,7 @@ class Sim:
         T[:3, -1] = vec[:3]
         return T
 
-    def prepare_action(self, action, left_pose, right_pose):
+    def prepare_action(self, action, left_pose, right_pose, left_gripper, right_gripper):
         T_xfront2yfront = np.identity(4)
         R_xfront2yfront = R.from_euler("Z", np.array([np.pi/2]))
         T_xfront2yfront[:3, :3] = R_xfront2yfront.as_matrix()
@@ -317,11 +336,15 @@ class Sim:
             np.concatenate((T_left_pose[:3, -1], R.from_matrix(T_left_pose[:3, :3]).as_quat()))
         action['right'] = \
             np.concatenate((T_right_pose[:3, -1], R.from_matrix(T_right_pose[:3, :3]).as_quat()))
+
+        gripper_dist = {'left': left_gripper, 'right': right_gripper}
+        for arm in self.arms:
+            action.extra['buttons'][arm + 'Trig'] = (1 - min(1, gripper_dist[arm] / (self.gripper_limit[arm] * 2)),)
         return action
     
     def check_valid_action(self, action, current_pose, current_quat):
         # TODO: add more safty checks
-        for arm in ['left', 'right']:
+        for arm in self.arms:
             if np.abs(np.linalg.norm(action[arm][3:]) - 1) > 0.1:
                 action[arm][3:] = np.array([0, 0, 0, 1])
             # initialize pose from default position
@@ -351,23 +374,18 @@ class Sim:
         data.qpos = sol
 
 
-    def step(self, head_rmat, left_pose, right_pose, left_qpos, right_qpos):
+    def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper):
 
         if self.print_freq:
             start = time.time()
         
-        # get current states
-        hands_cartesian_position = {}
+        # get current statesgripper_joint_names
         current_pose_dict, current_quat_dict = {}, {}
         for i, (body_key, body_name) in enumerate(self.ee_body_names.items()):
             current_pose = self.data.body(body_name).xpos
             current_quat = self.data.body(body_name).xquat
             current_pose_dict[body_key] = current_pose
             current_quat_dict[body_key] = current_quat
-            cartesian_position = \
-                np.concatenate((current_pose, current_quat[1:], [current_quat[0]]))
-            hands_cartesian_position[body_key] = cartesian_position
-
 
         if self.action_iter == len(self.action_list):
             print("End of action list")
@@ -380,9 +398,8 @@ class Sim:
             print("A button pressed")
             raise Exception("A button pressed")
         
-
         # action = oculus_pose2mujoco(action)
-        action = self.prepare_action(action, left_pose, right_pose)
+        action = self.prepare_action(action, left_pose, right_pose, left_gripper, right_gripper)
         self.prev_action, action, self.press_flag = self.process_action(self.prev_action, action, self.press_flag)
         mujoco_action = self.oculus_delta_pose2mujoco(action, self.prev_action, current_pose_dict, current_quat_dict)
         mujoco_action = self.check_valid_action(mujoco_action, current_pose_dict, current_quat_dict)
@@ -439,12 +456,12 @@ if __name__ == '__main__':
     teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=2, resolution=simulator.get_resolution())
 
     while True:
-        head_rmat, left_pose, right_pose, left_qpos, right_qpos = teleoperator.step()
+        head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist = teleoperator.step()
         #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
         #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
         print("get vr pose: ", left_pose, right_pose)
         try:
-            left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
+            left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist)
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
         except Exception as e:
             simulator.end()

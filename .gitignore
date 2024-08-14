@@ -11,3 +11,4 @@ __MACOSX/
 *.jpg
 *.svo
 *.png
+MUJOCO_LOG.TXT

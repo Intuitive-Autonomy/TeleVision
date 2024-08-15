@@ -26,3 +26,6 @@ tqdm==4.66.4
 vuer==0.0.32rc7
 wandb==0.17.3
 casadi==3.6.5
+mujoco==3.2.2
+mediapipe==0.10.11
+pynput==1.7.7

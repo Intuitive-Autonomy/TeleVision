@@ -155,7 +155,9 @@ class Sim:
  
 
     def init_controller(self, model, data):
+        print("initial qpos: ", self.data.qpos)
         mj.mj_step(model, data)
+        print("initial qpos: ", self.data.qpos)
 
     def keyboard(self, window, key, scancode, act, mods):
         if act == glfw.PRESS and key == glfw.KEY_BACKSPACE:
@@ -490,15 +492,20 @@ if __name__ == '__main__':
     cur_state = None
     while True:
         head_rmat, left_pose, right_pose, left_qpos, right_qpos = teleoperator.step()
-        #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
-        #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
+        # left_pose = np.identity(4)
+        # left_pose[:3, 3] = np.array([0.232, -0.20949964, 1.12497988])/2
+        # right_pose = np.identity(4)
+        # right_pose[:3, 3] = np.array([0.232, 0.20949964, 1.12497988])/2
+        # print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
+        # print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
         print("get vr pose: ", left_pose, right_pose)
         try:
             # left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
             sol_q, tau_ff, ik_solver_flag = arm_ik.ik_fun(left_pose, right_pose, cur_state)
-            print("sol_q: ", sol_q)
+            print("sol_q: {} ik flag: {}".format(sol_q, ik_solver_flag))
             left_img, right_img, cur_state = simulator.step_qpos(sol_q)
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
+            # exit(0)
         except Exception as e:
             simulator.end()
             exit(0)

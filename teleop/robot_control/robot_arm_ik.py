@@ -191,7 +191,6 @@ class Arm_IK:
 
     def adjust_pose(self, human_left_pose, human_right_pose, human_arm_length=0.60, robot_arm_length=1.20):
         scale_factor = robot_arm_length / human_arm_length
-        scale_factor = 1
         robot_left_pose = human_left_pose.copy()
         robot_right_pose = human_right_pose.copy()
         robot_left_pose[:3, 3] *= scale_factor

@@ -25,6 +25,7 @@ import os
 from lm_ik import LevenbegMarquardtIK
 
 class VuerTeleop:
+    # record_playback_realtime: 0: no record, realtime vr, 1: record, 2: playback
     def __init__(self, config_file_path, record_data_path="", record_playback_realtime=0, resolution=(720, 1280)):
         self.resolution = resolution
         self.crop_size_w = 0
@@ -77,9 +78,6 @@ class VuerTeleop:
         right_qpos = self.right_retargeting.retarget(right_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
         left_gripper_dist = np.linalg.norm(left_finger_pos[0] - left_finger_pos[1])
         right_gripper_dist = np.linalg.norm(right_finger_pos[0] - right_finger_pos[1])
-        
-        if self.step_index % 100 == 0:
-            print("step_index:", self.step_index)
 
         if self.record_playback_realtime == 1 and self.step_index == 2000:
             self.tv.save_record_data()
@@ -89,7 +87,7 @@ class VuerTeleop:
         return head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist
 
 class Sim:
-    def __init__(self, print_freq=False):
+    def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
         xml_path = '../assets/robot_assemble.xml'
 
@@ -98,11 +96,11 @@ class Sim:
         xml_path = abspath
 
         # MuJoCo data structures
+        self.record_playback_realtime = record_playback_realtime
         self.model = mj.MjModel.from_xml_path(xml_path)  # MuJoCo model
         self.data = mj.MjData(self.model)                # MuJoCo data
         self.data_sim = mj.MjData(self.model)            # data structure for forward/inverse kinematics
-        self.cam = mj.MjvCamera()                        # Abstract camera
-        self.opt = mj.MjvOption()                        # visualization options
+
 
         # Init GLFW, create window, make OpenGL context current, request v-sync
         glfw.init()
@@ -111,23 +109,35 @@ class Sim:
         glfw.make_context_current(self.window)
         glfw.swap_interval(1)
 
-        # initialize visualization data structures
-        mj.mjv_defaultCamera(self.cam)
-        mj.mjv_defaultOption(self.opt)
-        self.scene = mj.MjvScene(self.model, maxgeom=10000)
-        self.context = mj.MjrContext(self.model, mj.mjtFontScale.mjFONTSCALE_150.value)
 
         # install GLFW mouse and keyboard callbacks
         glfw.set_key_callback(self.window, self.keyboard)
-#        glfw.set_cursor_pos_callback(self.window, self.mouse_move)
+        glfw.set_cursor_pos_callback(self.window, self.mouse_move)
         glfw.set_mouse_button_callback(self.window, self.mouse_button)
         glfw.set_scroll_callback(self.window, self.scroll)
+        self.button_left = False
+        self.button_middle = False
+        self.button_right = False
+        self.lastx = 0
+        self.lasty = 0
 
-        # Set camera configuration
-        self.cam.azimuth = 90
-        self.cam.elevation = -40
-        self.cam.distance = 2.0
-        self.cam.lookat = np.array([0, 0, 1])
+        # Set camera configuration 
+        # cam:  88.35000000000005 -57.00000000000002 0.3593839214309096 [3.40591518e-04 1.10704845e-04 1.74931750e+00]
+        # print("cam: ", self.cam.azimuth, self.cam.elevation, self.cam.distance, self.cam.lookat)  
+        self.cam = mj.MjvCamera()                        # Abstract camera
+        self.opt = mj.MjvOption()                        # visualization options
+        self.cam.azimuth = 89.6999999999999
+        self.cam.elevation = -43.59999999999983
+        self.cam.distance = 0.5222320046244449
+        self.cam.lookat = np.array([-7.36667992e-03,  9.29655102e-05,  1.64719830e+00])
+        
+        # initialize visualization data structures
+        #mj.mjv_defaultCamera(self.cam)
+        #mj.mjv_defaultOption(self.opt)
+        self.scene = mj.MjvScene(self.model, maxgeom=10000)
+        self.context = mj.MjrContext(self.model, mj.mjtFontScale.mjFONTSCALE_150.value)
+
+
         self.ik_solver = LevenbegMarquardtIK(self.model, self.data_sim)
 
         # control components
@@ -137,18 +147,18 @@ class Sim:
         self.gripper_joint_names = \
             {"left": ["L_finger1_joint", "L_finger2_joint"],
             "right": ["R_finger1_joint", "R_finger2_joint"]}
-        self.press_flag = {'left': False, 'right': False}
+        self.press_flag = {'left': True, 'right': True}
         self.gripper_limit = {}
         for arm in self.arms:
             joint_name = self.gripper_joint_names[arm][0] # assume all gripper joints have the same limit
             joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
             joint_limits = self.model.jnt_range[joint_id]
             self.gripper_limit[arm] = joint_limits[1] - joint_limits[0]
-        
+
         import pickle
         with open('action.pkl', 'rb') as file:
             self.action_list = pickle.load(file)
-        self.action_iter = 0
+            self.action_iter = 0
         self.init_controller(self.model, self.data)    
         self.print_freq = print_freq
         self.prev_action = {}
@@ -168,14 +178,11 @@ class Sim:
 
     def mouse_button(self, window, button, act, mods):
         # update button state
-        global button_left
-        global button_middle
-        global button_right
-        button_left = (glfw.get_mouse_button(
+        self.button_left = (glfw.get_mouse_button(
             window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS)
-        button_middleabs = (glfw.get_mouse_button(
+        self.button_middle = (glfw.get_mouse_button(
             window, glfw.MOUSE_BUTTON_MIDDLE) == glfw.PRESS)
-        button_right = (glfw.get_mouse_button(
+        self.button_right = (glfw.get_mouse_button(
             window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS)
 
         # update mouse position
@@ -183,15 +190,15 @@ class Sim:
 
     def mouse_move(self, window, xpos, ypos):
         # compute mouse displacement, save
-        global lastx
-        global lasty
-        dx = xpos - lastx
-        dy = ypos - lasty
-        lastx = xpos
-        lasty = ypos
+        self.lastx
+        self.lasty
+        dx = xpos - self.lastx
+        dy = ypos - self.lasty
+        self.lastx = xpos
+        self.lasty = ypos
 
         # no buttons down: nothing to do
-        if (not button_left) and (not button_middle) and (not button_right):
+        if (not self.button_left) and (not self.button_middle) and (not self.button_right):
             return
 
         # get current window sizarmse
@@ -205,12 +212,12 @@ class Sim:
         mod_shift = (PRESS_LEFT_SHIFT or PRESS_RIGHT_SHIFT)
 
         # determine action based on mouse button
-        if button_right:
+        if self.button_right:
             if mod_shift:
                 action = mj.mjtMouse.mjMOUSE_MOVE_H
             else:
                 action = mj.mjtMouse.mjMOUSE_MOVE_V
-        elif button_left:
+        elif self.button_left:
             if mod_shift:
                 action = mj.mjtMouse.mjMOUSE_ROTATE_H
             else:
@@ -218,12 +225,15 @@ class Sim:
         else:
             action = mj.mjtMouse.mjMOUSE_ZOOM
 
-        mj.mjv_moveCamera(self.model, action, dx/height, dy/height, self.scene, self.cam)
+        mj.mjv_moveCamera(self.model, action, dx/width, dy/height, self.scene, self.cam)
+        print("cam: ", self.cam.azimuth, self.cam.elevation, self.cam.distance, self.cam.lookat) 
 
     def scroll(self, window, xoffset, yoffset):
         action = mj.mjtMouse.mjMOUSE_ZOOM
         mj.mjv_moveCamera(self.model, action, 0.0, -0.05 *
                         yoffset, self.scene, self.cam)
+        print("scroll cam: ", self.cam.azimuth, self.cam.elevation, self.cam.distance, self.cam.lookat) 
+
         
     def process_action(self, prev_action, action, press_flag):
         for arm in ['left', 'right']:
@@ -232,15 +242,19 @@ class Sim:
 
             if press_flag[arm]:
                 # case 0: continue press
-                if action.extra['buttons'].get(arm + 'Grip', (0.0,))[0] > 1e-3:
+                # Hack hack hack, always true
+                if action.extra['buttons'].get(arm + 'Grip', (0.1,))[0] > 1e-3:
                     pass
                 # case 1: stop press
                 else:
+                    print("stop press, arm: %s Grip %f" % (arm + 'Grip', action.extra['buttons'].get(arm + 'Grip', (0.0,))[0]))
                     press_flag[arm] = False
                     prev_action[arm] = action[arm]
             else:
+                print("False already")
                 # case 2: start press
-                if action.extra['buttons'].get(arm + 'Grip', (0.0,))[0] > 1e-3:
+                # Hack hack hack, always true
+                if action.extra['buttons'].get(arm + 'Grip', (0.1,))[0] > 1e-3:
                     press_flag[arm] = True
                     prev_action[arm] = action[arm]
                 # case 3: keep not press
@@ -388,16 +402,16 @@ class Sim:
             current_pose_dict[body_key] = current_pose
             current_quat_dict[body_key] = current_quat
 
-        if self.action_iter == len(self.action_list):
-            print("End of action list")
-            raise Exception("End of action list")
 
-        action = self.action_list[self.action_iter]
-        self.action_iter += 1
+        #if self.print_freq:
+        #print("get vr pose: ", left_pose, right_pose)
 
-        if action.extra['buttons'].get('A', False):
-            print("A button pressed")
-            raise Exception("A button pressed")
+
+        # Initialize action
+        action = TeleopAction()
+        # if action.extra['buttons'].get('A', False):
+        #     print("A button pressed")
+        #     raise Exception("A button pressed")
         
         # action = oculus_pose2mujoco(action)
         action = self.prepare_action(action, left_pose, right_pose, left_gripper, right_gripper)
@@ -453,17 +467,15 @@ class Sim:
 
 
 if __name__ == '__main__':
-    simulator = Sim()
-    teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=2, resolution=simulator.get_resolution())
-
+    record_playback_realtime = 2
+    simulator = Sim(record_playback_realtime=record_playback_realtime)
+    teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=record_playback_realtime, resolution=simulator.get_resolution())
     while True:
-        head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist = teleoperator.step()
-        #print("head_rmat", head_rmat, "right_pose", right_pose, "right_qpos", right_qpos)
-        #print(head_rmat, left_pose, right_pose, left_qpos, right_qpos)
-        print("get vr pose: ", left_pose, right_pose)
         try:
+            head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist = teleoperator.step()
             left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist)
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
         except Exception as e:
+            print("Error: ", e)
             simulator.end()
             exit(0)

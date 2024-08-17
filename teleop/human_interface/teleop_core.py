@@ -9,7 +9,8 @@ class TeleopAction(AttrDict):
     right: np.ndarray = field(default_factory=lambda: np.r_[np.zeros(6), np.ones(1)])
     base: np.ndarray = field(default_factory=lambda: np.zeros(3))
     torso: float = field(default_factory=lambda: 0.)
-    extra: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=lambda: {'buttons': {}})
+    
 
 
 @dataclass

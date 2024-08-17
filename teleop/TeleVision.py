@@ -96,6 +96,8 @@ class OpenTeleVision:
 
     def step_record_data(self):
         self.record_data_index += 1
+        if self.record_data_index >= len(self.record_data_dict['left_hand']):
+            raise ValueError("End of recorded data")
     
     def save_record_data(self):
         if self.record_playback_realtime == 1:

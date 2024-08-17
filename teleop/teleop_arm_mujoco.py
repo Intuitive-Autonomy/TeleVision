@@ -8,6 +8,7 @@ from constants_vuer import tip_indices
 from dex_retargeting.retargeting_config import RetargetingConfig
 from pytransform3d import rotations
 import cv2
+from human_interface.teleop_core import TeleopAction
 
 from pathlib import Path
 import argparse

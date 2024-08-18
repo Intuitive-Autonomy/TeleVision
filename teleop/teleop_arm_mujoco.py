@@ -85,19 +85,21 @@ class VuerTeleop:
         left_last_3_paml_finger_pose = left_hand_mat[last_3_palm_indices]
         right_last_3_tip_finger_pos = right_hand_mat[last_3_tip_indices]
         right_last_3_palm_finger_pos = right_hand_mat[last_3_palm_indices]
+        left_press_dist = 0
+        right_press_dist = 0
         for i in range(3):
-            left_gripper_dist += np.linalg.norm(left_last_3_tip_finger_pos[i] - left_last_3_paml_finger_pose[i])
-            right_gripper_dist += np.linalg.norm(right_last_3_tip_finger_pos[i] - right_last_3_palm_finger_pos[i])
-        left_pressed = left_gripper_dist < 0.25
-        right_pressed = right_gripper_dist < 0.25
-        print("left_gripper_dist: ", (left_gripper_dist, left_pressed))
-        print("right_gripper_dist: ", (right_gripper_dist, right_pressed))
-        if self.record_playback_realtime == 1 and self.step_index == 2000:
+            left_press_dist += np.linalg.norm(left_last_3_tip_finger_pos[i] - left_last_3_paml_finger_pose[i])
+            right_press_dist += np.linalg.norm(right_last_3_tip_finger_pos[i] - right_last_3_palm_finger_pos[i])
+        left_pressed = left_press_dist < 0.2
+        right_pressed = right_press_dist < 0.2
+        if self.step_index % 100 == 0:
+            print("step index: ", self.step_index)
+        if self.record_playback_realtime == 1 and self.step_index == 5000:
             self.tv.save_record_data()
             print("Recording data")
 
         self.step_index += 1
-        return head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist
+        return head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed
 
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
@@ -252,29 +254,14 @@ class Sim:
         for arm in ['left', 'right']:
             if prev_action.get(arm, None) is None:
                 prev_action[arm] = action[arm]
+            
+            # if not pressed, just set current action as previous action, so no change for action
+            # otherwise, just calulate the change of action
+            if press_flag[arm] == False:
+                prev_action[arm] = action[arm]
 
-            if press_flag[arm]:
-                # case 0: continue press
-                # Hack hack hack, always true
-                if action.extra['buttons'].get(arm + 'Grip', (0.1,))[0] > 1e-3:
-                    pass
-                # case 1: stop press
-                else:
-                    print("stop press, arm: %s Grip %f" % (arm + 'Grip', action.extra['buttons'].get(arm + 'Grip', (0.0,))[0]))
-                    press_flag[arm] = False
-                    prev_action[arm] = action[arm]
-            else:
-                print("False already")
-                # case 2: start press
-                # Hack hack hack, always true
-                if action.extra['buttons'].get(arm + 'Grip', (0.1,))[0] > 1e-3:
-                    press_flag[arm] = True
-                    prev_action[arm] = action[arm]
-                # case 3: keep not press
-                else:
-                    prev_action[arm] = action[arm]
+        return prev_action, action
 
-        return prev_action, action, press_flag
         
     def set_gripper_joint(self, model, data, action, joint_names):
         # use leftTrig and rightTrig button value for gripper
@@ -321,7 +308,7 @@ class Sim:
                                 R.from_matrix(T_gripper2base[:3, :3]).as_quat()))
         return mujoco_action
 
-    def oculus_delta_pose2mujoco(self, action, prev_action, cur_pose_dict, cur_quat_dict):
+    def oculus_delta_pose2mujoco(self, action, prev_action, cur_pose_dict, cur_quat_dict, press_flag):
         mujoco_action = {}
         for arm in ['left', 'right']:
             # T_gripper2base = self.trans_gripper_base(self.vec2mat(action[arm]))
@@ -336,7 +323,10 @@ class Sim:
 
             xpos_delta = cur_xpos - prev_xpos
             quat_delta = R.from_matrix(cur_rot_mat @ np.linalg.inv(prev_rot_mat))
-            
+            if press_flag[arm] == False:
+                xpos_delta = np.array([0, 0, 0])
+                quat_delta = R.from_matrix(np.identity(3))
+
             target_xpos = cur_pose_dict[arm] + xpos_delta
             target_quat = quat_delta * R.from_quat(np.roll(cur_quat_dict[arm], -1))
             
@@ -366,7 +356,6 @@ class Sim:
             np.concatenate((T_right_pose[:3, -1], R.from_matrix(T_right_pose[:3, :3]).as_quat()))
 
         gripper_dist = {'left': left_gripper, 'right': right_gripper}
-        print("gripper_dist: ", gripper_dist)
         for arm in self.arms:
             action.extra['buttons'][arm + 'Trig'] = (1 - min(1, gripper_dist[arm] / (self.gripper_limit[arm] * 2)),)
         return action
@@ -403,7 +392,7 @@ class Sim:
         data.qpos = sol
 
 
-    def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper):
+    def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper, left_pressed, right_pressed):
 
         if self.print_freq:
             start = time.time()
@@ -429,8 +418,9 @@ class Sim:
         
         # action = oculus_pose2mujoco(action)
         action = self.prepare_action(action, left_pose, right_pose, left_gripper, right_gripper)
-        self.prev_action, action, self.press_flag = self.process_action(self.prev_action, action, self.press_flag)
-        mujoco_action = self.oculus_delta_pose2mujoco(action, self.prev_action, current_pose_dict, current_quat_dict)
+        press_flag = {'left': left_pressed, 'right': right_pressed}
+        self.prev_action, action = self.process_action(self.prev_action, action, press_flag)
+        mujoco_action = self.oculus_delta_pose2mujoco(action, self.prev_action, current_pose_dict, current_quat_dict, press_flag)
         mujoco_action = self.check_valid_action(mujoco_action, current_pose_dict, current_quat_dict)
         self.prev_action = action
 
@@ -479,15 +469,14 @@ class Sim:
         glfw.terminate()
 
 
-
 if __name__ == '__main__':
-    record_playback_realtime = 0
+    record_playback_realtime = 2
     simulator = Sim(record_playback_realtime=record_playback_realtime)
     teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=record_playback_realtime, resolution=simulator.get_resolution())
     while True:
         try:
-            head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist = teleoperator.step()
-            left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist)
+            head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed = teleoperator.step()
+            left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed)
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
         except Exception as e:
             print("Error: ", e)

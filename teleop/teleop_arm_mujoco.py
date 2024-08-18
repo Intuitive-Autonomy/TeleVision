@@ -4,7 +4,7 @@ import torch
 
 from TeleVision import OpenTeleVision
 from Preprocessor import VuerPreprocessor
-from constants_vuer import tip_indices
+from constants_vuer import tip_indices, last_3_palm_indices, last_3_tip_indices
 from dex_retargeting.retargeting_config import RetargetingConfig
 from pytransform3d import rotations
 import cv2
@@ -61,6 +61,7 @@ class VuerTeleop:
         # get body poses from teleop control device
         # left_hand_mat and right_hand_mat are finger positions in the left_wrist and right_wrist coorindate
         head_mat, left_wrist_mat, right_wrist_mat, left_hand_mat, right_hand_mat = self.processor.process(self.tv)
+        #print("left_hand_mat: ", left_hand_mat)
 
         # head rotation matrix
         head_rmat = head_mat[:3, :3]
@@ -79,6 +80,18 @@ class VuerTeleop:
         left_gripper_dist = np.linalg.norm(left_finger_pos[0] - left_finger_pos[1])
         right_gripper_dist = np.linalg.norm(right_finger_pos[0] - right_finger_pos[1])
 
+        # calulate the last three finger is pressed or not
+        left_last_3_tip_finger_pos = left_hand_mat[last_3_tip_indices]
+        left_last_3_paml_finger_pose = left_hand_mat[last_3_palm_indices]
+        right_last_3_tip_finger_pos = right_hand_mat[last_3_tip_indices]
+        right_last_3_palm_finger_pos = right_hand_mat[last_3_palm_indices]
+        for i in range(3):
+            left_gripper_dist += np.linalg.norm(left_last_3_tip_finger_pos[i] - left_last_3_paml_finger_pose[i])
+            right_gripper_dist += np.linalg.norm(right_last_3_tip_finger_pos[i] - right_last_3_palm_finger_pos[i])
+        left_pressed = left_gripper_dist < 0.25
+        right_pressed = right_gripper_dist < 0.25
+        print("left_gripper_dist: ", (left_gripper_dist, left_pressed))
+        print("right_gripper_dist: ", (right_gripper_dist, right_pressed))
         if self.record_playback_realtime == 1 and self.step_index == 2000:
             self.tv.save_record_data()
             print("Recording data")
@@ -353,6 +366,7 @@ class Sim:
             np.concatenate((T_right_pose[:3, -1], R.from_matrix(T_right_pose[:3, :3]).as_quat()))
 
         gripper_dist = {'left': left_gripper, 'right': right_gripper}
+        print("gripper_dist: ", gripper_dist)
         for arm in self.arms:
             action.extra['buttons'][arm + 'Trig'] = (1 - min(1, gripper_dist[arm] / (self.gripper_limit[arm] * 2)),)
         return action
@@ -467,7 +481,7 @@ class Sim:
 
 
 if __name__ == '__main__':
-    record_playback_realtime = 2
+    record_playback_realtime = 0
     simulator = Sim(record_playback_realtime=record_playback_realtime)
     teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records.pkl", record_playback_realtime=record_playback_realtime, resolution=simulator.get_resolution())
     while True:

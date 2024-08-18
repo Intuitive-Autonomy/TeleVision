@@ -22,6 +22,9 @@ hand2inspire_r_finger = np.array([[0, -1, 0, 0],
                                   [1, 0, 0, 0],
                                   [0, 0, 0, 1]])
 
+last_3_tip_indices = [14, 19, 24]
+last_3_palm_indices = [10, 15, 20]
+
 
 hand2inspire = np.array([[0, -1, 0, 0],
                          [0, 0, -1, 0],

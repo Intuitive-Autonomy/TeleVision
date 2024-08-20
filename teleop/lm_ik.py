@@ -29,7 +29,7 @@ class LevenbegMarquardtIK:
         if not isinstance(body_ids, list):
             body_ids = [body_ids]
 
-        self.data.qpos = init_q
+        self.data.qpos = init_q.copy()
         mj.mj_forward(self.model, self.data)
         current_poses = \
             np.vstack([self.data.body(body_id).xpos for body_id in body_ids])
@@ -117,5 +117,5 @@ class LevenbegMarquardtIK:
         
         # if total_error > 1:
         #     return init_q
-       
+        self.check_joint_limits(self.data.qpos)
         return self.data.qpos

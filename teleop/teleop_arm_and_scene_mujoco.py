@@ -61,6 +61,7 @@ class VuerTeleop:
         # get body poses from teleop control device
         # left_hand_mat and right_hand_mat are finger positions in the left_wrist and right_wrist coorindate
         head_mat, left_wrist_mat, right_wrist_mat, left_hand_mat, right_hand_mat = self.processor.process_legacy(self.tv)
+
         #print("left_hand_mat: ", left_hand_mat)
 
         # head rotation matrix
@@ -75,8 +76,9 @@ class VuerTeleop:
         # finger pose and ik
         left_finger_pos = left_hand_mat[tip_indices]
         right_finger_pos = right_hand_mat[tip_indices]
-        left_qpos = self.left_retargeting.retarget(left_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-        right_qpos = self.right_retargeting.retarget(right_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        # left_qpos = self.left_retargeting.retarget(left_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        # right_qpos = self.right_retargeting.retarget(right_finger_pos)[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        left_qpos, right_qpos = None, None
         left_gripper_dist = np.linalg.norm(left_finger_pos[0] - left_finger_pos[1])
         right_gripper_dist = np.linalg.norm(right_finger_pos[0] - right_finger_pos[1])
 
@@ -104,18 +106,23 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        xml_path = '../assets/robot_assemble.xml'
-
-        dirname = os.path.dirname(__file__)
-        abspath = os.path.join(dirname, xml_path)
-        xml_path = abspath
+        scene_xml_path = '../assets/robot_and_scene.xml'
+        scene_xml_path = os.path.join(os.path.dirname(__file__), scene_xml_path)
+        robot_xml_path = '../assets/robot_assemble.xml'
+        robot_xml_path = os.path.join(os.path.dirname(__file__), robot_xml_path)
 
         # MuJoCo data structures
         self.record_playback_realtime = record_playback_realtime
-        self.model = mj.MjModel.from_xml_path(xml_path)  # MuJoCo model
-        self.data = mj.MjData(self.model)                # MuJoCo data
-        self.data_sim = mj.MjData(self.model)            # data structure for forward/inverse kinematics
-
+        self.model = mj.MjModel.from_xml_path(scene_xml_path)  # MuJoCo model
+        self.data = mj.MjData(self.model)
+        self.model_ik = mj.MjModel.from_xml_path(robot_xml_path)      # MuJoCo data
+        self.data_ik = mj.MjData(self.model_ik)            # data structure for forward/inverse kinematics
+        # print("scene njnt {} nq {}".format(self.model.njnt, self.model.nq))
+        for i in range(self.model.nq):
+            print(mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_JOINT, i))
+        for i in range(self.model_ik.nq):
+            print(mj.mj_id2name(self.model_ik, mj.mjtObj.mjOBJ_JOINT, i))
+        # print("robot njnt {} nq {}".format(self.model_ik.njnt, self.model_ik.nq))
 
         # Init GLFW, create window, make OpenGL context current, request v-sync
         glfw.init()
@@ -152,8 +159,7 @@ class Sim:
         self.scene = mj.MjvScene(self.model, maxgeom=10000)
         self.context = mj.MjrContext(self.model, mj.mjtFontScale.mjFONTSCALE_150.value)
 
-
-        self.ik_solver = LevenbegMarquardtIK(self.model, self.data_sim)
+        self.ik_solver = LevenbegMarquardtIK(self.model_ik, self.data_ik)
 
         # control components
         self.arms = ['left', 'right']
@@ -249,7 +255,7 @@ class Sim:
                         yoffset, self.scene, self.cam)
         print("scroll cam: ", self.cam.azimuth, self.cam.elevation, self.cam.distance, self.cam.lookat) 
 
-        
+
     def process_action(self, prev_action, action, press_flag):
         for arm in ['left', 'right']:
             if prev_action.get(arm, None) is None:
@@ -262,7 +268,7 @@ class Sim:
 
         return prev_action, action
 
-        
+
     def set_gripper_joint(self, model, data, action, joint_names):
         # use leftTrig and rightTrig button value for gripper
         for arm in ['left', 'right']:
@@ -272,7 +278,7 @@ class Sim:
                 press_val = action.get(arm + 'Trig', (0.0,))[0]
                 joint_q = joint_limits[0] + \
                     (joint_limits[1] - joint_limits[0]) * press_val
-                data.qpos[joint_id] = joint_q
+                data.qpos[joint_id + 6] = joint_q
 
 
     def trans_gripper_base(self, T_hand2head, arm='left', vr_height=1.0):
@@ -359,7 +365,8 @@ class Sim:
         for arm in self.arms:
             action.extra['buttons'][arm + 'Trig'] = (1 - min(1, gripper_dist[arm] / (self.gripper_limit[arm] * 2)),)
         return action
-    
+
+
     def check_valid_action(self, action, current_pose, current_quat):
         # TODO: add more safty checks
         for arm in self.arms:
@@ -380,16 +387,18 @@ class Sim:
         # mujoco quaternion is scalar first
         target_quat_list_ = \
             [np.concatenate(([quat[-1]], quat[:-1])) for quat in target_quat_list]
-        body_ids = [mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, body_name) 
+        body_ids = [mj.mj_name2id(self.model_ik, mj.mjtObj.mjOBJ_BODY, body_name) 
                     for i, body_name in enumerate(body_names)]
         sol = self.ik_solver.calculate(
             target_xpos_list, 
             target_quat_list_, 
-            data.qpos, 
+            data.qpos[7:], 
             body_ids)
 
         # Apply control
-        data.qpos = sol
+        print("joint", sol)
+
+        data.qpos[7:] = sol
 
 
     def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper, left_pressed, right_pressed):

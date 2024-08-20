@@ -221,7 +221,7 @@ class Arm_IK:
             self.init_data = sol_q
 
             if motorV is not None:
-                v =motorV * 0.0
+                v = motorV * 0.0
             else:
                 v = (sol_q-self.init_data ) * 0.0
 

@@ -145,6 +145,7 @@ class Sim:
         self.cam.elevation = -43.59999999999983
         self.cam.distance = 0.5222320046244449
         self.cam.lookat = np.array([-7.36667992e-03,  9.29655102e-05,  1.64719830e+00])
+        self.model.opt.integrator = 1
         
         # initialize visualization data structures
         #mj.mjv_defaultCamera(self.cam)

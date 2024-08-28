@@ -106,7 +106,7 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        scene_xml_path = '../assets/robot_and_scene.xml'
+        scene_xml_path = '../assets/robot_and_scene_posctrl.xml'
         scene_xml_path = os.path.join(os.path.dirname(__file__), scene_xml_path)
         robot_xml_path = '../assets/robot_assemble.xml'
         robot_xml_path = os.path.join(os.path.dirname(__file__), robot_xml_path)
@@ -115,6 +115,8 @@ class Sim:
         self.record_playback_realtime = record_playback_realtime
         self.model = mj.MjModel.from_xml_path(scene_xml_path)  # MuJoCo model
         self.data = mj.MjData(self.model)
+        # self.model.opt.integrator = 2
+
         self.model_ik = mj.MjModel.from_xml_path(robot_xml_path)      # MuJoCo data
         self.data_ik = mj.MjData(self.model_ik)            # data structure for forward/inverse kinematics
         # print("scene njnt {} nq {}".format(self.model.njnt, self.model.nq))
@@ -278,7 +280,7 @@ class Sim:
                 press_val = action.get(arm + 'Trig', (0.0,))[0]
                 joint_q = joint_limits[0] + \
                     (joint_limits[1] - joint_limits[0]) * press_val
-                data.qpos[joint_id + 6] = joint_q
+                data.ctrl[joint_id - 1] = joint_q
 
 
     def trans_gripper_base(self, T_hand2head, arm='left', vr_height=1.0):
@@ -396,9 +398,7 @@ class Sim:
             body_ids)
 
         # Apply control
-        print("joint", sol)
-
-        data.qpos[7:] = sol
+        self.data.ctrl = sol
 
 
     def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper, left_pressed, right_pressed):
@@ -445,7 +445,11 @@ class Sim:
             self.gripper_joint_names 
             )
 
-        mj.mj_step(self.model, self.data)
+        # compensate gravity
+        self.data.qfrc_applied[6:] = self.data.qfrc_bias[6:]
+        for step_iter in range(100):
+            # print("step iter : {} ctrl {}".format(step_iter, self.data.ctrl))
+            mj.mj_step(self.model, self.data)
 
         # get framebuffer viewport
         viewport_width, viewport_height = glfw.get_framebuffer_size(self.window)

@@ -21,6 +21,8 @@ class LevenbegMarquardtIK:
 
     #Levenberg-Marquardt pseudocode implementation
     def calculate(self, xpos_goals, quat_goals, init_q, body_ids, max_iter=200):
+        mj.mj_resetData(self.model, self.data)
+
         """Calculate the desire joints angles for goal"""
         if not isinstance(xpos_goals, list):
             xpos_goals = [xpos_goals]
@@ -114,8 +116,6 @@ class LevenbegMarquardtIK:
         # print("rotation error {:.3} at iter {}".format(
         #     np.sum(np.linalg.norm(quat_errors, axis=0)), num_iter))
         # print("----")
-        
-        # if total_error > 1:
-        #     return init_q
+
         self.check_joint_limits(self.data.qpos)
-        return self.data.qpos
+        return self.data.qpos.copy()

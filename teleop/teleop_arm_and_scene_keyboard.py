@@ -120,10 +120,10 @@ class Sim:
         self.model_ik = mj.MjModel.from_xml_path(robot_xml_path)      # MuJoCo data
         self.data_ik = mj.MjData(self.model_ik)            # data structure for forward/inverse kinematics
         # print("scene njnt {} nq {}".format(self.model.njnt, self.model.nq))
-        for i in range(self.model.nq):
-            print(mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_JOINT, i))
-        for i in range(self.model_ik.nq):
-            print(mj.mj_id2name(self.model_ik, mj.mjtObj.mjOBJ_JOINT, i))
+        # for i in range(self.model.nq):
+        #     print(mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_JOINT, i))
+        # for i in range(self.model_ik.nq):
+        #     print(mj.mj_id2name(self.model_ik, mj.mjtObj.mjOBJ_JOINT, i))
         # print("robot njnt {} nq {}".format(self.model_ik.njnt, self.model_ik.nq))
 
         # Init GLFW, create window, make OpenGL context current, request v-sync
@@ -208,7 +208,7 @@ class Sim:
     def move_backward(self):
         self.move(delta_xpos={"right": [0, -0.01, 0]})
 
-    def move(self, delta_xpos):
+    def move(self, delta_xpos=dict(), delta_quat=dict()):
         current_pose_dict, current_quat_dict = {}, {}
         for i, (body_key, body_name) in enumerate(self.ee_body_names.items()):
             current_pose = self.data.body(body_name).xpos
@@ -217,14 +217,14 @@ class Sim:
             current_quat_dict[body_key] = current_quat
         mujoco_action = {}
         for arm in ['left', 'right']:
-            xpos_delta = delta_xpos.get(arm, [0, 0, 0])
-            quat_delta = R.from_matrix(np.identity(3))
+            xpos_delta = delta_xpos.get(arm, np.zeros(3))
+            quat_delta = delta_quat.get(arm, R.from_matrix(np.identity(3)))
             target_xpos = current_pose_dict[arm] + xpos_delta
             target_quat = quat_delta * R.from_quat(np.roll(current_quat_dict[arm], -1))
-            
             mujoco_action[arm] = \
                 np.concatenate((target_xpos, 
-                                target_quat.as_quat()))
+                                target_quat.as_quat().flatten()))
+
         self.set_ee_pose(
             self.model, self.data,
             [mujoco_action[arm][:3] for arm in self.arms], 
@@ -258,6 +258,18 @@ class Sim:
             self.move_gripper({"right": 0.0025})
         elif key == glfw.KEY_F:
             self.move_gripper({"right": -0.0025})
+        elif key == glfw.KEY_T:
+            self.move(delta_quat={"right": R.from_euler('z', [0.05])})
+        elif key == glfw.KEY_G:
+            self.move(delta_quat={"right": R.from_euler('z', [-0.05])})
+        elif key == glfw.KEY_Y:
+            self.move(delta_quat={"right": R.from_euler('x', [0.05])})
+        elif key == glfw.KEY_H:
+            self.move(delta_quat={"right": R.from_euler('x', [-0.05])})
+        elif key == glfw.KEY_U:
+            self.move(delta_quat={"right": R.from_euler('y', [0.05])})
+        elif key == glfw.KEY_J:
+            self.move(delta_quat={"right": R.from_euler('y', [-0.05])})
         elif act == glfw.PRESS and key == glfw.KEY_BACKSPACE:
             mj.mj_resetData(self.model, self.data)
             self.init_controller(self.model, self.data)

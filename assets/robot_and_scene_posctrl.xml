@@ -10,8 +10,8 @@
     <mesh name="Link5" file="Link5.stl"/>
     <mesh name="Link6" file="Link6.stl"/>
     <mesh name="gripper_base_link" file="gripper_base_link.STL"/>
-    <mesh name="finger1_link" file="finger1_link.STL"/>
-    <mesh name="finger2_link" file="finger2_link.STL"/>
+    <mesh name="finger1_link" file="finger1_link.STL" scale="1 1 1"/>
+    <mesh name="finger2_link" file="finger2_link.STL" scale="1 1 1"/>
   </asset>
   <asset>
     <material name="table_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.93 0.93 0.93 1"></material>
@@ -23,19 +23,23 @@
     <light name="top" pos="0 0 2" mode="trackcom"/>
     <geom type="plane" size="1 1 0.5" rgba= "0.8 0.8 0.8 1"/>
 
-    <body pos="0 0.5 0.55" name="table0">
-			<geom size="0.25 0.3 0.55" type="box" mass="2000" material="table_mat"></geom>
-			<geom size="0.25 0.3 0.55" type="box" mass="2000" group="1" material="table_mat"></geom>
+    <body pos="0 0.5 0.5" name="table0">
+			<geom size="0.25 0.3 0.5" type="box" mass="2000" material="table_mat" friction="1 0.005 0.0001" condim="3"></geom>
+			<!-- <geom size="0.25 0.3 0.55" type="box" mass="2000" group="1" material="table_mat"></geom> -->
 		</body>
 
-    <body pos="-0.1 0.55 1.1" name="object0">
+    <!-- <body pos="-0.1 0.55 1.1" name="object0">
 			<joint name="object0:joint" type="free" damping="0.01"></joint>
 			<geom pos="0 0 0" mesh="can_mesh" type="mesh" solimp="0.998 0.998 0.001" solref="0.001 1" density="100" friction="0.95 0.3 0.1" material="coke" group="1" condim="4"/>
-			<!-- <geom pos="0 0 0" mesh="can_mesh" type="mesh" material="coke"  conaffinity="0" contype="0" group="1" mass="0.0001"/> -->
-			<!-- <site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 1" type="sphere"></site>
+			<geom pos="0 0 0" mesh="can_mesh" type="mesh" material="coke"  conaffinity="0" contype="0" group="1" mass="0.0001"/>
+			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 1" type="sphere"></site>
 			<site rgba="0 0 0 0" size="0.005" pos="0 0 -0.06" name="can_bottom_site"/>
 			<site rgba="0 0 0 0" size="0.005" pos="0 0 0.04" name="can_top_site"/>
-			<site rgba="0 0 0 0" size="0.005" pos="0.025 0.025 0" name="can_horizontal_radius_site"/> -->
+			<site rgba="0 0 0 0" size="0.005" pos="0.025 0.025 0" name="can_horizontal_radius_site"/>
+		</body> -->
+    <body pos="0.1 0.4 1." name="object0">
+			<joint name="object0:joint" type="free" damping="0.01"></joint>
+			<geom pos="0 0 0.05" type="box" size="0.015 0.015 0.05" solimp=".8 .9 .01" solref=".02 1" friction="1.0 .05 .001" condim="6"/>
 		</body>
   
     <body name="body">
@@ -67,14 +71,14 @@
                     <joint name="R_joint6" pos="0 0 0" axis="0 0 1" range="-6.283 6.283" actuatorfrcrange="-100 100" damping="10"/>
                     <geom type="mesh" rgba="1 1 1 1" mesh="Link6"/>
                     <body name="R_gripper_base_link">
-                      <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="gripper_base_link" pos="-0.0475 -0.0326 0"/>
+                      <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="gripper_base_link" pos="-0.0475 -0.0326 0" conaffinity="0" contype="0"/>
                       <body name="R_finger1_link" pos="0.041 0.01815 0.08">
                         <joint name="R_finger1_joint" pos="0 0 0" axis="-1 0 0" type="slide" range="0 0.04" actuatorfrcrange="-140 140" damping="100" armature="5"/>
-                        <geom type="mesh" rgba="1 1 1 1" mesh="finger1_link" pos="-0.0485 -0.035 -0.0758" conaffinity="1" contype="0" friction="1 0.005 0.0001"/>
+                        <geom type="mesh" rgba="1 1 1 1" mesh="finger1_link" pos="-0.0485 -0.035 -0.0758" conaffinity="1" contype="0" friction="1 0.5 0.0001" solref="0.01 1" solimp="0.8 0.9 0.001" condim="6"/>
                       </body>
                       <body name="R_finger2_link" pos="-0.041 -0.01815 0.08">
                         <joint name="R_finger2_joint" pos="0 0 0" axis="1 0 0" type="slide" range="0 0.04" actuatorfrcrange="-140 140" damping="100" armature="5"/>
-                        <geom type="mesh" rgba="1 1 1 1" mesh="finger2_link" pos="-0.019 -0.012 -0.0758" conaffinity="1" contype="0" friction="1 0.005 0.0001"/>
+                        <geom type="mesh" rgba="1 1 1 1" mesh="finger2_link" pos="-0.019 -0.012 -0.0758" conaffinity="1" contype="0" friction="1 0.5 0.0001" solref="0.01 1" solimp="0.8 0.9 0.001" condim="6"/>
                       </body>
                     </body>
                   </body>
@@ -114,11 +118,11 @@
                       <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="gripper_base_link" pos="-0.0475 -0.0326 0"/>
                       <body name="L_finger1_link" pos="0.041 0.01815 0.08">
                         <joint name="L_finger1_joint" pos="0 0 0" axis="-1 0 0" type="slide" range="0 0.04" actuatorfrcrange="-140 140" damping="100" armature="5"/>
-                        <geom type="mesh" rgba="1 1 1 1" mesh="finger1_link" pos="-0.0485 -0.035 -0.0758" conaffinity="1" contype="0" friction="1 0.005 0.0001"/>
+                        <geom type="mesh" rgba="1 1 1 1" mesh="finger1_link" pos="-0.0485 -0.035 -0.0758" conaffinity="1" contype="0" friction="1 0.5 0.0001" solref="0.01 1" solimp="0.8 0.9 0.001" condim="6"/>
                       </body>
                       <body name="L_finger2_link" pos="-0.041 -0.01815 0.08">
                         <joint name="L_finger2_joint" pos="0 0 0" axis="1 0 0" type="slide" range="0 0.04" actuatorfrcrange="-140 140" damping="100" armature="5"/>
-                        <geom type="mesh" rgba="1 1 1 1" mesh="finger2_link" pos="-0.019 -0.012 -0.0758" conaffinity="1" contype="0" friction="1 0.005 0.0001"/>
+                        <geom type="mesh" rgba="1 1 1 1" mesh="finger2_link" pos="-0.019 -0.012 -0.0758" conaffinity="1" contype="0" friction="1 0.5 0.0001" solref="0.01 1" solimp="0.8 0.9 0.001" condim="6"/>
                       </body>
                     </body>
                   </body>

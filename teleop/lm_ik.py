@@ -16,6 +16,8 @@ class LevenbegMarquardtIK:
     def check_joint_limits(self, q):
         """Check if the joints is under or above its limits"""
         for i in range(len(q)):
+            if i in [6, 7, 14, 15]:
+                continue
             q[i] = max(self.model.jnt_range[i][0], 
                        min(q[i], self.model.jnt_range[i][1]))
 

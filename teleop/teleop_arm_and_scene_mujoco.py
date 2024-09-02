@@ -447,7 +447,7 @@ class Sim:
 
         # compensate gravity
         self.data.qfrc_applied[6:] = self.data.qfrc_bias[6:]
-        for step_iter in range(100):
+        for step_iter in range(1):
             # print("step iter : {} ctrl {}".format(step_iter, self.data.ctrl))
             mj.mj_step(self.model, self.data)
 

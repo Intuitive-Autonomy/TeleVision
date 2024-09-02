@@ -106,7 +106,7 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        scene_xml_path = '../assets/robot_and_scene_posctrl.xml'
+        scene_xml_path = '../assets/robot_and_scene_gripper.xml'
         scene_xml_path = os.path.join(os.path.dirname(__file__), scene_xml_path)
         robot_xml_path = '../assets/robot_assemble.xml'
         robot_xml_path = os.path.join(os.path.dirname(__file__), robot_xml_path)
@@ -169,14 +169,16 @@ class Sim:
             {"left": "L_Link6", "right": "R_Link6"}
         self.gripper_joint_names = \
             {"left": ["L_finger1_joint", "L_finger2_joint"],
-            "right": ["R_finger1_joint", "R_finger2_joint"]}
+            "right": ["finger_joint1", "finger_joint2"]}
         self.press_flag = {'left': True, 'right': True}
         self.gripper_limit = {}
+        self.gripper_ctrl = {}
         for arm in self.arms:
             joint_name = self.gripper_joint_names[arm][0] # assume all gripper joints have the same limit
             joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
             joint_limits = self.model.jnt_range[joint_id]
             self.gripper_limit[arm] = joint_limits[1] - joint_limits[0]
+            self.gripper_ctrl[arm] = [joint_limits[0], joint_limits[0]]
 
         import pickle
         with open('action.pkl', 'rb') as file:
@@ -188,6 +190,8 @@ class Sim:
  
 
     def init_controller(self, model, data):
+        # R_joint2 R_joint3 prevent singularity
+        data.ctrl[1:3] = [0.5, -0.5]
         mj.mj_step(model, data)
     
     def move_down(self):
@@ -230,16 +234,24 @@ class Sim:
             [mujoco_action[arm][:3] for arm in self.arms], 
             [mujoco_action[arm][3:] for arm in self.arms], 
             [self.ee_body_names[arm] for arm in self.arms])
-    
+
     def move_gripper(self, delta_gripper):
+        global gripper_ctrl
         for arm in ['left', 'right']:
-            for joint_name in self.gripper_joint_names[arm]:
+            for finger_ind, joint_name in enumerate(self.gripper_joint_names[arm]):
+                # joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
+                # joint_limits = self.model.jnt_range[joint_id]
+                # current_val = self.data.qpos[self.model.jnt_qposadr[[joint_id, -1]][0]]
+                # gripper_sign = 1 if "1" in joint_name else -1
+                # joint_q = max(joint_limits[0],
+                #               min(joint_limits[1], current_val + gripper_sign * delta_gripper.get(arm, 0)))
+                # self.data.ctrl[joint_id - 1] = joint_q
                 joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
                 joint_limits = self.model.jnt_range[joint_id]
-                current_val = self.data.qpos[self.model.jnt_qposadr[[joint_id, -1]][0]]
-                joint_q = max(joint_limits[0],
-                              min(joint_limits[1], current_val + delta_gripper.get(arm, 0)))
-                self.data.ctrl[joint_id - 1] = joint_q
+                joint_q = joint_limits[int("1" in joint_name)] * (delta_gripper.get(arm, 0) > 0)
+                self.gripper_ctrl[arm][finger_ind] = joint_q
+                # self.data.ctrl[joint_id - 1] = joint_q
+
 
     def keyboard(self, window, key, scancode, act, mods):
         if key == glfw.KEY_W:
@@ -476,6 +488,7 @@ class Sim:
             data.qpos[7:], 
             body_ids)
 
+        print("set ee pose: ", sol)
         # Apply control
         self.data.ctrl = sol
 
@@ -483,8 +496,9 @@ class Sim:
     def step(self):        
         # compensate gravity
         self.data.qfrc_applied[6:] = self.data.qfrc_bias[6:]
-        for step_iter in range(40):
+        for step_iter in range(30):
             # print("step iter : {} ctrl {}".format(step_iter, self.data.ctrl))
+            self.data.ctrl[6:8] = self.gripper_ctrl['right']
             mj.mj_step(self.model, self.data)
 
         # get framebuffer viewport

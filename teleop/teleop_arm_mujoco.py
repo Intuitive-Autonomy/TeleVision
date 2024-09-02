@@ -104,7 +104,7 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        xml_path = '../assets/robot_assemble_posctrl.xml'
+        xml_path = '../assets/robot_assemble.xml'
 
         dirname = os.path.dirname(__file__)
         abspath = os.path.join(dirname, xml_path)

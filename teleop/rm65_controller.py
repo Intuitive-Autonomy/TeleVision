@@ -50,13 +50,16 @@ class RM65Controller():
         self.control_thread.start()
     
     def get_joint_state(self):
-        ms_tmp_ptr = self.joint_state_buffer.GetData()
-        if ms_tmp_ptr:
-            return ms_tmp_ptr
+        joint_state = self.joint_state_buffer.GetData()
+        if joint_state:
+            return joint_state
         else:
             return None
     
     def set_joint_state(self, joint):
+        if len(joint) != kNumJoints:
+            print("invalid joint dimension")
+            return
         if joint is not None:
             self.joint_command_buffer.SetData(joint)
 

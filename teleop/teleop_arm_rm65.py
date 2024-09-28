@@ -107,9 +107,9 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        scene_xml_path = '../assets/robot_assemble.xml'
+        scene_xml_path = '../assets/robot_assemble_rm65.xml'
         scene_xml_path = os.path.join(os.path.dirname(__file__), scene_xml_path)
-        robot_xml_path = '../assets/robot_assemble.xml'
+        robot_xml_path = '../assets/robot_assemble_rm65.xml'
         robot_xml_path = os.path.join(os.path.dirname(__file__), robot_xml_path)
 
         # MuJoCo data structures
@@ -402,6 +402,8 @@ class Sim:
         return sol
 
     def set_joint_state(self, joint_state):
+        if joint_state is None:
+            return
         mj.mj_resetData(self.model, self.data)
         self.data.qpos = joint_state.copy()
         mj.mj_forward(self.model, self.data)
@@ -435,7 +437,6 @@ class Sim:
 
         # control
         joint_sol = self.get_ik_sol(
-            self.model, self.data,
             [mujoco_action[arm][:3] for arm in self.arms], 
             [mujoco_action[arm][3:] for arm in self.arms], 
             [self.ee_body_names[arm] for arm in self.arms])

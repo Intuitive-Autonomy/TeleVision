@@ -9,6 +9,7 @@ from dex_retargeting.retargeting_config import RetargetingConfig
 from pytransform3d import rotations
 import cv2
 from human_interface.teleop_core import TeleopAction
+from rm65_controller import RM65Controller
 
 from pathlib import Path
 import argparse
@@ -106,7 +107,7 @@ class VuerTeleop:
 class Sim:
     def __init__(self, print_freq=False, record_playback_realtime=0):
         # get the full path
-        scene_xml_path = '../assets/robot_and_scene_posctrl.xml'
+        scene_xml_path = '../assets/robot_assemble.xml'
         scene_xml_path = os.path.join(os.path.dirname(__file__), scene_xml_path)
         robot_xml_path = '../assets/robot_assemble.xml'
         robot_xml_path = os.path.join(os.path.dirname(__file__), robot_xml_path)
@@ -385,7 +386,7 @@ class Sim:
         return action
 
 
-    def set_ee_pose(self, model, data, target_xpos_list, target_quat_list, body_names):
+    def get_ik_sol(self, target_xpos_list, target_quat_list, body_names):
         # mujoco quaternion is scalar first
         target_quat_list_ = \
             [np.concatenate(([quat[-1]], quat[:-1])) for quat in target_quat_list]
@@ -394,12 +395,16 @@ class Sim:
         sol = self.ik_solver.calculate(
             target_xpos_list, 
             target_quat_list_, 
-            data.qpos[7:], 
+            self.data.qpos, 
             body_ids)
 
         # Apply control
-        self.data.ctrl = sol
+        return sol
 
+    def set_joint_state(self, joint_state):
+        mj.mj_resetData(self.model, self.data)
+        self.data.qpos = joint_state.copy()
+        mj.mj_forward(self.model, self.data)
 
     def step(self, head_rmat, left_pose, right_pose, left_gripper, right_gripper, left_pressed, right_pressed):
 
@@ -413,11 +418,6 @@ class Sim:
             current_quat = self.data.body(body_name).xquat
             current_pose_dict[body_key] = current_pose
             current_quat_dict[body_key] = current_quat
-
-
-        #if self.print_freq:
-        #print("get vr pose: ", left_pose, right_pose)
-
 
         # Initialize action
         action = TeleopAction()
@@ -434,22 +434,11 @@ class Sim:
         self.prev_action = action
 
         # control
-        self.set_ee_pose(
+        joint_sol = self.get_ik_sol(
             self.model, self.data,
             [mujoco_action[arm][:3] for arm in self.arms], 
             [mujoco_action[arm][3:] for arm in self.arms], 
             [self.ee_body_names[arm] for arm in self.arms])
-        self.set_gripper_joint(
-            self.model, self.data, 
-            action.extra['buttons'],
-            self.gripper_joint_names 
-            )
-
-        # compensate gravity
-        self.data.qfrc_applied[6:] = self.data.qfrc_bias[6:]
-        for step_iter in range(30):
-            # print("step iter : {} ctrl {}".format(step_iter, self.data.ctrl))
-            mj.mj_step(self.model, self.data)
 
         # get framebuffer viewport
         viewport_width, viewport_height = glfw.get_framebuffer_size(self.window)
@@ -472,7 +461,7 @@ class Sim:
         # cv2.namedWindow('Mujoco', cv2.WINDOW_AUTOSIZE)
         # cv2.imshow('Mujoco', rgb_image)
         # cv2.waitKey(1)
-        return rgb_image, rgb_image
+        return joint_sol, rgb_image, rgb_image
 
     def get_resolution(self):
         viewport_width, viewport_height = glfw.get_framebuffer_size(self.window)
@@ -485,11 +474,15 @@ class Sim:
 if __name__ == '__main__':
     record_playback_realtime = 2
     simulator = Sim(record_playback_realtime=record_playback_realtime)
+    arm_controller = RM65Controller()
     teleoperator = VuerTeleop('inspire_hand.yml', record_data_path="hand_records_robosuite.pkl", record_playback_realtime=record_playback_realtime, resolution=simulator.get_resolution())
     while True:
         try:
             head_rmat, left_pose, right_pose, left_qpos, right_qpos, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed = teleoperator.step()
-            left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed)
+            arm_joint_state = arm_controller.get_joint_state()
+            simulator.set_joint_state(arm_joint_state)
+            joint_sol, left_img, right_img = simulator.step(head_rmat, left_pose, right_pose, left_gripper_dist, right_gripper_dist, left_pressed, right_pressed)
+            arm_controller.set_joint_state(joint_sol)
             np.copyto(teleoperator.img_array, np.hstack((left_img, right_img)))
         except Exception as e:
             print("Error: ", e)
